@@ -1,0 +1,29 @@
+./.venv/lib/python3.12/site-packages/bleak/backends/bluezdbus/client.py:696: UserWarning: Using default MTU value. Call _acquire_mtu() or set _mtu_size first to avoid this warning.
+  warnings.warn(
+Connected to AA:BB:CC:DD:EE:F2, MTU=23
+
+[service] 00001801-0000-1000-8000-00805f9b34fb  (Generic Attribute Profile)  handle=6
+  [char] 00002a05-0000-1000-8000-00805f9b34fb  handle=7  props=indicate  (Service Changed)
+    [desc] 00002902-0000-1000-8000-00805f9b34fb handle=9 value=02 00
+
+[service] 00001800-0000-1000-8000-00805f9b34fb  (Generic Access Profile)  handle=1
+  [char] 00002a00-0000-1000-8000-00805f9b34fb  handle=2  props=read  (Device Name)
+         value: 41 69 64 6f 74  bytearray(b'Aidot')
+  [char] 00002a01-0000-1000-8000-00805f9b34fb  handle=4  props=read  (Appearance)
+         value: 00 00  bytearray(b'\x00\x00')
+
+[service] 5cfefeab-cdc1-4a6d-b1af-6f18294c99bc  (Unknown)  handle=10
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294ca00d  handle=18  props=read  (Unknown)
+         value:   bytearray(b'')
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294ca00c  handle=16  props=read  (Unknown)
+         value: 66 69 52 56 43 64 79 61 69 42 79 64 38 4d 65 6c c6 9c 82 e3 f0 4f 2e 36 a6 36 83 dd be 0e d6 73 3f ba d3 b2 02 56 39 57 88 52 f3 38 e0 f2 9a 16 86 58 88 97 bd 93 1d 22 a3 85 68 a9 ec a0 f0 73 1d 8e f2 9c a2 fd 4d 0a 6d cc 16 8b 61 69 fb d9 bf ab 1c 95 c2 cd dd 0a c5 7d 52 da 01 35 a0 75 c3 77 75 5a 2a e0 34 c7 a9 e0 c9 d7 52 a2 ec 50 77 23 52 ff dc 47 a7 4a b8 39 70 3b 06 55 b1 af 5d 16 66 9e 87 46 1e 20 8d 18 95 dc f5 73 ec 81 b9 5c 41 77 8f 89 1c a3 58 03 b0  bytearray(b'fiRVCdyaiByd8Mel\xc6\x9c\x82\xe3\xf0O.6\xa66\x83\xdd\xbe\x0e\xd6s?\xba\xd3\xb2\x02V9W\x88R\xf38\xe0\xf2\x9a\x16\x86X\x88\x97\xbd\x93\x1d"\xa3\x85h\xa9\xec\xa0\xf0s\x1d\x8e\xf2\x9c\xa2\xfdM\nm\xcc\x16\x8bai\xfb\xd9\xbf\xab\x1c\x95\xc2\xcd\xdd\n\xc5}R\xda\x015\xa0u\xc3wuZ*\xe04\xc7\xa9\xe0\xc9\xd7R\xa2\xecPw#R\xff\xdcG\xa7J\xb89p;\x06U\xb1\xaf]\x16f\x9e\x87F\x1e \x8d\x18\x95\xdc\xf5s\xec\x81\xb9\\Aw\x8f\x89\x1c\xa3X\x03\xb0')
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294ca00a  handle=11  props=write  (Unknown)
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294cdf01  handle=20  props=write-without-response  (Unknown)
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294cb002  handle=27  props=notify  (Unknown)
+    [desc] 00002902-0000-1000-8000-00805f9b34fb handle=29 value=00 00
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294cb001  handle=25  props=write  (Unknown)
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294cdf02  handle=22  props=notify  (Unknown)
+    [desc] 00002902-0000-1000-8000-00805f9b34fb handle=24 value=00 00
+  [char] 5cfefeab-cdc1-4a6d-b1af-6f18294ca00b  handle=13  props=read,notify  (Unknown)
+         value: 64 75 6f 59 42 4e 57 48 30 6e 6e 6c 58 70 64 4f f5 93 4c 5d ef 28 88 29 86 7f a7 12 75 5a 7e 19 61 f9 79 4c 4f bc 31 49 76 c9 2a 15 e2 17 75 74 2c 02 64 69 c5 9e b9 d9 2f fa 9b f7 d3 c4 28 c6 f4 c1 56 72 23 9a dc 23 6b b9 32 65 d2 6c f3 ee 49 16 d4 a0 f5 0a ad 63 d8 b3 b2 90 b7 44 2a 93 0e 5c  bytearray(b'duoYBNWH0nnlXpdO\xf5\x93L]\xef(\x88)\x86\x7f\xa7\x12uZ~\x19a\xf9yLO\xbc1Iv\xc9*\x15\xe2\x17ut,\x02di\xc5\x9e\xb9\xd9/\xfa\x9b\xf7\xd3\xc4(\xc6\xf4\xc1Vr#\x9a\xdc#k\xb92e\xd2l\xf3\xeeI\x16\xd4\xa0\xf5\n\xadc\xd8\xb3\xb2\x90\xb7D*\x93\x0e\\')
+    [desc] 00002902-0000-1000-8000-00805f9b34fb handle=15 value=00 00

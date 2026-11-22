@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AiDot Bulb</string>
+    <string name="widget_description">Control your AiDot/Linkind bulbs over Bluetooth.</string>
+</resources>

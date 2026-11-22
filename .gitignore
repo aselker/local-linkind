@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Per-device runtime cache (maps your bulbs' MACs -> modelId)
+.aidot_models.json
+
+# Reverse-engineering scratch: the decompiled vendor app and the jadx tool.
+# Not redistributed (proprietary / third-party); reproduce locally if needed.
+apk/
+tools/
+
+# Android / Gradle build artifacts (android/.gitignore also covers these)
+**/local.properties
+**/.gradle/
+**/build/
+*.iml
+.idea/
+
+# Editor / OS
+.DS_Store
+*.swp
