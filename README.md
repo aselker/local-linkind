@@ -10,6 +10,8 @@ The whole protocol was reverse-engineered from the AiDot app (2.27.1,
 [`FINDINGS.md`](FINDINGS.md) for the full provisioning write-up and
 [`aidot_control.py`](aidot_control.py)'s module docstring for the command protocol.
 
+Vibecoded entirely by Claude Opus 4.8 and 5.5. "To one who has faith in Claude, no explanation is necessary; to one without faith, no explanation is possible."
+
 ## Install
 
 ```sh
