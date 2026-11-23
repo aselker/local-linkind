@@ -10,6 +10,8 @@ import com.aidotble.widget.ble.BleOps
 import com.aidotble.widget.ble.Discovery
 import com.aidotble.widget.data.Bulb
 import com.aidotble.widget.data.BulbStore
+import com.aidotble.widget.data.Group
+import com.aidotble.widget.data.GroupStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -85,18 +87,27 @@ class ProvisionActivity : AppCompatActivity() {
             }
             val ok = result as BleOps.ProvResult.Ok
             val existing = store.get(f.address)
+            val name = existing?.name ?: (f.name ?: f.address)
             store.put(
                 Bulb(
                     address = f.address,
                     deviceId = ok.deviceId,
                     modelId = ok.modelId,
-                    name = existing?.name ?: (f.name ?: f.address),
+                    name = name,
                     shortModel = f.shortModel,
                     brightnessPresets = existing?.brightnessPresets ?: Bulb.DEFAULT_BRIGHTNESS,
                     cctPresets = existing?.cctPresets ?: Bulb.DEFAULT_CCT,
                     rgbPresets = existing?.rgbPresets ?: emptyList(),
                 ),
             )
+            // For a brand-new bulb, seed a size-1 group so it shows up on the widget right away;
+            // the user can merge it into a larger group later. Re-provisioning leaves groups alone.
+            if (existing == null) {
+                val groups = GroupStore.get(this@ProvisionActivity)
+                if (groups.all().none { f.address in it.members }) {
+                    groups.put(Group(name = name, members = listOf(f.address)))
+                }
+            }
             Toast.makeText(this@ProvisionActivity, "Added as ${ok.modelId}", Toast.LENGTH_LONG).show()
             finish()
         }

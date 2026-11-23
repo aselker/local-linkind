@@ -32,6 +32,7 @@
 
         <activity android:name=".ui.ProvisionActivity" android:exported="false" android:label="Add a bulb" />
         <activity android:name=".ui.BulbEditActivity" android:exported="false" android:label="Edit bulb" />
+        <activity android:name=".ui.GroupEditActivity" android:exported="false" android:label="Edit group" />
 
         <!-- Home-screen widget provider -->
         <receiver

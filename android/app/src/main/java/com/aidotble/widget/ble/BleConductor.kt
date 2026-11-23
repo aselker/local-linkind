@@ -27,12 +27,20 @@ object BleConductor {
     private const val TAG = "AidotBle"
     private const val IDLE_CLOSE_MS = 4_000L
 
+    // After a bulb fails to connect (e.g. it's switched off at the wall), skip re-attempting it for
+    // this long. A fresh connect attempt to an unreachable bulb ties up Android's BLE stack for
+    // several seconds, which would stall taps to the bulbs that ARE on — so for a short window we
+    // fail it instantly instead. Short enough that a bulb switched back on responds within a tap
+    // or two; an explicit tap after the window retries it normally.
+    private const val FAILURE_COOLDOWN_MS = 5_000L
+
     private class Session(val client: BulbClient) {
         var idleJob: Job? = null
     }
 
     private val sessions = ConcurrentHashMap<String, Session>()
     private val locks = ConcurrentHashMap<String, Mutex>()
+    private val recentFailures = ConcurrentHashMap<String, Long>()   // addr -> last connect-failure time
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private fun lockFor(address: String): Mutex = locks.getOrPut(address.uppercase()) { Mutex() }
@@ -44,8 +52,23 @@ object BleConductor {
         modelId: String,
         deviceId: String,
         vararg attrs: Protocol.Attr,
-    ): Boolean = lockFor(address).withLock {
+    ): Boolean {
         val key = address.uppercase()
+        // Fast-fail a bulb that just failed to connect, without taking its lock or touching the
+        // radio — this is what keeps the other bulbs snappy while one is unreachable.
+        val failedAt = recentFailures[key]
+        if (failedAt != null && System.currentTimeMillis() - failedAt < FAILURE_COOLDOWN_MS) return false
+        return lockFor(address).withLock { applyLocked(context, key, address, modelId, deviceId, *attrs) }
+    }
+
+    private suspend fun applyLocked(
+        context: Context,
+        key: String,
+        address: String,
+        modelId: String,
+        deviceId: String,
+        vararg attrs: Protocol.Attr,
+    ): Boolean {
         val appCtx = context.applicationContext
 
         var session = sessions[key]?.also { it.idleJob?.cancel() }
@@ -55,8 +78,10 @@ object BleConductor {
             val client = BulbClient(appCtx, address)
             if (!connectAndSignIn(client, modelId, deviceId)) {
                 client.close()
-                return@withLock false
+                recentFailures[key] = System.currentTimeMillis()
+                return false
             }
+            recentFailures.remove(key)   // reachable again
             session = Session(client).also { sessions[key] = it }
         }
 
@@ -69,7 +94,7 @@ object BleConductor {
             session.client.close()
             sessions.remove(key)
         }
-        ok
+        return ok
     }
 
     private suspend fun connectAndSignIn(client: BulbClient, modelId: String, deviceId: String): Boolean {

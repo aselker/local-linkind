@@ -101,7 +101,14 @@ class BulbClient(private val context: Context, val address: String) {
     }
 
     // -- connection ---------------------------------------------------------
-    suspend fun connect(): Boolean {
+    /**
+     * Open a GATT connection, giving up after [timeoutMs]. A bulb that's switched off at the wall
+     * is simply unreachable, so on timeout we immediately [close] the pending attempt instead of
+     * leaving it dangling: Android partly serializes *connection establishment*, so an abandoned
+     * dead attempt would otherwise stall connects to the bulbs that ARE reachable. Failing fast and
+     * releasing the GATT client keeps the other bulbs responsive.
+     */
+    suspend fun connect(timeoutMs: Long = 5_000): Boolean {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
             ?: return false
         val device = adapter.getRemoteDevice(address)
@@ -109,7 +116,9 @@ class BulbClient(private val context: Context, val address: String) {
         connDeferred = d
         gatt = device.connectGatt(context, false, callback, android.bluetooth.BluetoothDevice.TRANSPORT_LE)
         if (gatt == null) return false
-        return (withTimeoutOrNull(8_000) { d.await() } == true)
+        val ok = withTimeoutOrNull(timeoutMs) { d.await() } == true
+        if (!ok) close()
+        return ok
     }
 
     /**
@@ -131,7 +140,7 @@ class BulbClient(private val context: Context, val address: String) {
         val d = CompletableDeferred<Boolean>()
         servicesDeferred = d
         if (!g.discoverServices()) return false
-        return (withTimeoutOrNull(10_000) { d.await() } == true)
+        return (withTimeoutOrNull(7_000) { d.await() } == true)
     }
 
     suspend fun enableNotifications(): Boolean {

@@ -2,7 +2,6 @@ package com.aidotble.widget.ui
 
 import android.os.Bundle
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -10,6 +9,7 @@ import com.aidotble.widget.ble.BleOps
 import com.aidotble.widget.ble.Protocol
 import com.aidotble.widget.data.Bulb
 import com.aidotble.widget.data.BulbStore
+import com.aidotble.widget.data.GroupStore
 import com.aidotble.widget.widget.BulbWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +18,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Rename a bulb, edit the brightness/CCT presets the widget exposes, test, or delete it. */
+/**
+ * A provisioned bulb's identity screen: rename it, test it, or delete it. The widget presets
+ * (brightness/CCT/RGB) are a *group* setting now — edit them in the group editor instead.
+ */
 class BulbEditActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -43,20 +46,10 @@ class BulbEditActivity : AppCompatActivity() {
         val nameField = input(bulb.name, "Name")
         col.add(nameField)
 
-        col.add(text("Brightness presets (%, comma-separated)", 14f, bold = true))
-        val brightField = input(bulb.brightnessPresets.toCsv(), "e.g. 20, 50, 100")
-        col.add(brightField)
-
-        col.add(text("Colour-temperature presets (kelvin, comma-separated)", 14f, bold = true))
-        val cctField = input(bulb.cctPresets.toCsv(), "e.g. 2700, 4000, 6500")
-        col.add(cctField)
-
-        col.add(text("RGB colour presets (hex, comma-separated — leave blank for none)", 14f, bold = true))
-        val rgbField = input(bulb.rgbPresets.toHexCsv(), "e.g. #ff3300, #00aaff")
-        col.add(rgbField)
+        col.add(text("Widget buttons (brightness, CCT, colours) are set per group — edit a group to change them.", 12f))
 
         col.add(text("", 8f))
-        col.add(button("Save") { save(nameField, brightField, cctField, rgbField) })
+        col.add(button("Save") { save(nameField) })
 
         col.add(text("Test", 14f, bold = true))
         val testRow = row()
@@ -67,6 +60,7 @@ class BulbEditActivity : AppCompatActivity() {
         col.add(text("", 16f))
         col.add(button("Delete bulb") {
             store.remove(bulb.address)
+            GroupStore.get(this).onBulbRemoved(bulb.address)
             BulbWidgetProvider.refreshAll(this)
             finish()
         })
@@ -77,24 +71,9 @@ class BulbEditActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun save(name: EditText, bright: EditText, cct: EditText, rgb: EditText) {
-        val brightList = bright.text.toString().toIntListOrNull()
-        val cctList = cct.text.toString().toIntListOrNull()
-        val rgbList = rgb.text.toString().toRgbListOrEmpty()
-        if (brightList == null || brightList.any { it !in 1..100 }) {
-            Toast.makeText(this, "Brightness presets must be 1–100", Toast.LENGTH_SHORT).show(); return
-        }
-        if (cctList == null || cctList.any { it !in 1000..10000 }) {
-            Toast.makeText(this, "CCT presets must be 1000–10000 K", Toast.LENGTH_SHORT).show(); return
-        }
-        if (rgbList == null) {
-            Toast.makeText(this, "RGB presets must be 6-digit hex (e.g. #ff3300)", Toast.LENGTH_SHORT).show(); return
-        }
+    private fun save(name: EditText) {
         store.update(bulb.address) {
             it.name = name.text.toString().ifBlank { bulb.address }
-            it.brightnessPresets = brightList
-            it.cctPresets = cctList
-            it.rgbPresets = rgbList
         }
         BulbWidgetProvider.refreshAll(this)
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()

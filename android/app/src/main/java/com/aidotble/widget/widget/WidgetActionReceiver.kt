@@ -7,6 +7,7 @@ import android.widget.Toast
 import com.aidotble.widget.ble.BleOps
 import com.aidotble.widget.ble.Protocol
 import com.aidotble.widget.data.BulbStore
+import com.aidotble.widget.data.GroupStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -14,14 +15,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Handles a widget button tap: one short-lived BLE op, then done. Uses goAsync() so the work
- * finishes off the main thread without any long-lived service — zero footprint once it returns.
+ * Handles a widget button tap: one short-lived BLE op (fanning out to a group's members), then
+ * done. Uses goAsync() so the work finishes off the main thread without any long-lived service —
+ * zero footprint once it returns.
  */
 class WidgetActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != BulbWidgetProvider.ACTION_APPLY) return
-        val address = intent.getStringExtra(BulbWidgetProvider.EXTRA_ADDRESS) ?: return
+        val groupId = intent.getStringExtra(BulbWidgetProvider.EXTRA_GROUP) ?: ""
         val kind = intent.getStringExtra(BulbWidgetProvider.EXTRA_KIND) ?: return
         val value = intent.getIntExtra(BulbWidgetProvider.EXTRA_VALUE, 0)
 
@@ -30,15 +32,18 @@ class WidgetActionReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (kind == "all_on" || kind == "all_off") {
-                    val (ok, total) = BleOps.setAll(appCtx, kind == "all_on")
+                    val on = kind == "all_on"
+                    val (ok, total) = BleOps.setAll(appCtx, on)
+                    if (ok > 0) GroupStore.get(appCtx).setAllLastOn(on)
                     withContext(Dispatchers.Main) {
                         BulbWidgetProvider.refreshAll(appCtx)
-                        Toast.makeText(appCtx, "All ${if (kind == "all_on") "on" else "off"}: $ok/$total", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(appCtx, "All ${if (on) "on" else "off"}: $ok/$total", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
-                val store = BulbStore.get(appCtx)
-                val bulb = store.get(address) ?: return@launch
+
+                val groups = GroupStore.get(appCtx)
+                val group = groups.get(groupId) ?: return@launch
                 val attrs: List<Protocol.Attr> = when (kind) {
                     "on" -> listOf(Protocol.Attr.OnOff(true))
                     "off" -> listOf(Protocol.Attr.OnOff(false))
@@ -50,16 +55,23 @@ class WidgetActionReceiver : BroadcastReceiver() {
                     )
                     else -> return@launch
                 }
-                val ok = withTimeoutOrNull(9_000) {
-                    BleOps.applyAttrs(appCtx, bulb.address, bulb.modelId, bulb.deviceId, *attrs.toTypedArray())
-                } ?: false
+                // Backstop so a stalled bulb can't push this broadcast past its ANR budget; the
+                // per-bulb ops inside already fail fast on an unreachable (switched-off) bulb.
+                val outcome = withTimeoutOrNull(9_000) { BleOps.applyToGroup(appCtx, group, *attrs.toTypedArray()) }
+                val ok = outcome?.ok ?: 0
+                val total = outcome?.total ?: group.members.size
 
-                if (ok) {
-                    store.update(address) { it.lastOn = kind != "off" }
+                if (ok > 0) {
+                    val on = kind != "off"
+                    groups.update(groupId) { it.lastOn = on }
+                    // Only the bulbs that actually responded get the new state — an off/unreachable
+                    // member keeps its previous state, so the widget doesn't claim it turned on.
+                    val bulbs = BulbStore.get(appCtx)
+                    outcome!!.succeeded.forEach { addr -> bulbs.update(addr) { it.lastOn = on } }
                     withContext(Dispatchers.Main) { BulbWidgetProvider.refreshAll(appCtx) }
                 }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appCtx, "${bulb.name}: ${if (ok) "ok" else "failed"}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(appCtx, "${group.name}: $ok/$total", Toast.LENGTH_SHORT).show()
                 }
             } finally {
                 pending.finish()

@@ -8,9 +8,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.aidotble.widget.ble.BleOps
-import com.aidotble.widget.ble.Protocol
-import com.aidotble.widget.data.Bulb
 import com.aidotble.widget.data.BulbStore
+import com.aidotble.widget.data.Group
+import com.aidotble.widget.data.GroupStore
 import com.aidotble.widget.widget.BulbWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,11 +23,13 @@ class MainActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var store: BulbStore
+    private lateinit var groups: GroupStore
     private lateinit var content: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = BulbStore.get(this)
+        groups = GroupStore.get(this)
         content = column()
         setContentView(ScrollView(this).apply { addView(content) })
         if (!Permissions.allGranted(this)) {
@@ -38,7 +40,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         render()
-        com.aidotble.widget.widget.BulbWidgetProvider.refreshAll(this)
+        BulbWidgetProvider.refreshAll(this)
     }
 
     override fun onDestroy() {
@@ -51,23 +53,34 @@ class MainActivity : AppCompatActivity() {
         content.add(text("Account-free bulb control", 22f, bold = true))
 
         val bulbs = store.all()
+        val groupList = groups.all()
+
+        // --- Groups: the control blocks the widget shows ---
+        content.add(text("Groups (shown on the widget)", 16f, bold = true))
         if (bulbs.isEmpty()) {
-            content.add(text("No bulbs yet. Tap “Add bulb” to scan for one over Bluetooth.", 15f))
+            content.add(text("Add a bulb first, then gather bulbs into groups.", 14f))
+        } else if (groupList.isEmpty()) {
+            content.add(text("No groups yet. Tap “Add group” — a group can be a single bulb.", 14f))
         }
-        for (bulb in bulbs) {
-            val glyph = if (bulb.lastOn) "●" else "○" // ● / ○
-            content.add(text("$glyph  ${bulb.name}", 18f, bold = true))
-            content.add(text("${bulb.address} · ${bulb.modelId}", 12f))
+        for (g in groupList) {
+            val glyph = if (g.lastOn) "●" else "○" // ● / ○
+            content.add(text("$glyph  ${g.name}", 18f, bold = true))
+            content.add(text(membersSummary(g), 12f))
             val controls = row()
-            controls.add(button("On") { apply(bulb, "on", Protocol.Attr.OnOff(true)) })
-            controls.add(button("Off") { apply(bulb, "off", Protocol.Attr.OnOff(false)) })
+            controls.add(button("On") { applyGroup(g, true) })
+            controls.add(button("Off") { applyGroup(g, false) })
             controls.add(button("Edit") {
-                startActivity(Intent(this, BulbEditActivity::class.java).putExtra("address", bulb.address))
+                startActivity(Intent(this, GroupEditActivity::class.java).putExtra("id", g.id))
             })
             content.add(controls)
         }
+        if (bulbs.isNotEmpty()) {
+            content.add(button("＋ Add group") {
+                startActivity(Intent(this, GroupEditActivity::class.java))
+            })
+        }
 
-        if (bulbs.size > 1) {
+        if (groupList.size > 1) {
             content.add(text("", 6f))
             val allRow = row()
             allRow.add(button("All on") { applyAll(true) })
@@ -75,7 +88,21 @@ class MainActivity : AppCompatActivity() {
             content.add(allRow)
         }
 
-        content.add(text("", 8f))
+        // --- Bulbs: the provisioned devices (identity + membership source) ---
+        content.add(text("", 10f))
+        content.add(text("Bulbs", 16f, bold = true))
+        if (bulbs.isEmpty()) {
+            content.add(text("No bulbs yet. Tap “Add bulb” to scan for one over Bluetooth.", 14f))
+        }
+        for (bulb in bulbs) {
+            content.add(text(bulb.name, 15f, bold = true))
+            content.add(text("${bulb.address} · ${bulb.modelId}", 12f))
+            val controls = row()
+            controls.add(button("Edit / delete") {
+                startActivity(Intent(this, BulbEditActivity::class.java).putExtra("address", bulb.address))
+            })
+            content.add(controls)
+        }
         content.add(button("＋ Add bulb") {
             if (!Permissions.allGranted(this)) {
                 ActivityCompat.requestPermissions(this, Permissions.required(), 1)
@@ -86,6 +113,7 @@ class MainActivity : AppCompatActivity() {
 
         val awm = android.appwidget.AppWidgetManager.getInstance(this)
         if (awm.isRequestPinAppWidgetSupported) {
+            content.add(text("", 8f))
             content.add(button("Add widget to home screen") {
                 awm.requestPinAppWidget(
                     android.content.ComponentName(this, BulbWidgetProvider::class.java), null, null,
@@ -94,32 +122,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun membersSummary(g: Group): String {
+        if (g.members.isEmpty()) return "no bulbs — tap Edit to add some"
+        val names = g.members.map { addr -> store.get(addr)?.name ?: addr }
+        return "${g.members.size} bulb${if (g.members.size == 1) "" else "s"}: ${names.joinToString(", ")}"
+    }
+
+    private fun applyGroup(group: Group, on: Boolean) {
+        Toast.makeText(this, "${group.name}: ${if (on) "on" else "off"}…", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                BleOps.applyToGroup(this@MainActivity, group, com.aidotble.widget.ble.Protocol.Attr.OnOff(on))
+            }
+            if (outcome.ok > 0) {
+                groups.update(group.id) { it.lastOn = on }
+                outcome.succeeded.forEach { addr -> store.update(addr) { it.lastOn = on } }
+                BulbWidgetProvider.refreshAll(this@MainActivity)
+            }
+            render()
+            Toast.makeText(this@MainActivity, "${group.name}: ${outcome.ok}/${outcome.total}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun applyAll(on: Boolean) {
         Toast.makeText(this, "All ${if (on) "on" else "off"}…", Toast.LENGTH_SHORT).show()
         scope.launch {
             val (ok, total) = withContext(Dispatchers.IO) { BleOps.setAll(this@MainActivity, on) }
+            if (ok > 0) groups.setAllLastOn(on)
             BulbWidgetProvider.refreshAll(this@MainActivity)
             render()
             Toast.makeText(this@MainActivity, "All ${if (on) "on" else "off"}: $ok/$total", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun apply(bulb: Bulb, label: String, vararg attrs: Protocol.Attr) {
-        Toast.makeText(this, "${bulb.name}: $label…", Toast.LENGTH_SHORT).show()
-        scope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                BleOps.applyAttrs(this@MainActivity, bulb.address, bulb.modelId, bulb.deviceId, *attrs)
-            }
-            if (ok && (label == "on" || label == "off")) {
-                store.update(bulb.address) { it.lastOn = label == "on" }
-                BulbWidgetProvider.refreshAll(this@MainActivity)
-                render()
-            }
-            Toast.makeText(
-                this@MainActivity,
-                if (ok) "${bulb.name}: $label ✓" else "${bulb.name}: failed",
-                Toast.LENGTH_SHORT,
-            ).show()
         }
     }
 }

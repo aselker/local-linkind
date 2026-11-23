@@ -8,11 +8,13 @@ import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
 import com.aidotble.widget.R
-import com.aidotble.widget.data.Bulb
 import com.aidotble.widget.data.BulbStore
+import com.aidotble.widget.data.Group
+import com.aidotble.widget.data.GroupStore
 
 /**
- * Home-screen widget. Renders every saved bulb with on/off + brightness/CCT preset buttons.
+ * Home-screen widget. Renders every saved group with on/off + brightness/CCT/RGB preset buttons.
+ * A group is one or more bulbs; a tap fans out to all of its members.
  *
  * Low-resource by design: updatePeriodMillis=0 means the widget never wakes on its own; the only
  * work happens when the user taps a button, which fires a one-shot broadcast to
@@ -26,10 +28,9 @@ class BulbWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_APPLY = "com.aidotble.widget.APPLY"
-        const val EXTRA_ADDRESS = "address"
+        const val EXTRA_GROUP = "group"   // group id (empty for all_on / all_off)
         const val EXTRA_KIND = "kind"     // on | off | brightness | cct | color | all_on | all_off
         const val EXTRA_VALUE = "value"   // int (pct or kelvin or packed rgb)
-        const val ALL = "*"               // sentinel address for all_on / all_off
 
         private var reqCode = 1
 
@@ -52,49 +53,52 @@ class BulbWidgetProvider : AppWidgetProvider() {
             val root = RemoteViews(context.packageName, R.layout.widget_root)
             root.removeAllViews(R.id.widget_container)
 
-            val bulbs = BulbStore.get(context).all()
-            if (bulbs.isEmpty()) {
-                root.addView(R.id.widget_container, label(context, "No bulbs — open the app to add one.", OFF_GREY))
+            val hasBulbs = BulbStore.get(context).all().isNotEmpty()
+            val groups = GroupStore.get(context).all()
+            if (groups.isEmpty()) {
+                val msg = if (hasBulbs) "No groups yet — open the app to make one."
+                          else "No bulbs — open the app to add one."
+                root.addView(R.id.widget_container, label(context, msg, OFF_GREY))
                 return root
             }
 
-            // "All on / All off" controls every bulb at once (only worth showing for 2+).
-            if (bulbs.size > 1) {
+            // "All on / All off" drives every group at once (only worth showing for 2+).
+            if (groups.size > 1) {
                 val allRow = RemoteViews(context.packageName, R.layout.widget_row)
-                allRow.addView(R.id.row_container, button(context, "All on", ALL, "all_on", 0))
-                allRow.addView(R.id.row_container, button(context, "All off", ALL, "all_off", 0))
+                allRow.addView(R.id.row_container, button(context, "All on", "", "all_on", 0))
+                allRow.addView(R.id.row_container, button(context, "All off", "", "all_off", 0))
                 root.addView(R.id.widget_container, allRow)
             }
 
-            for (bulb in bulbs) {
+            for (group in groups) {
                 // compact header row: name (weighted) + live-state On / Off on one line
-                val glyph = if (bulb.lastOn) "●" else "○" // ● / ○
+                val glyph = if (group.lastOn) "●" else "○" // ● / ○
                 val header = RemoteViews(context.packageName, R.layout.widget_row)
-                header.addView(R.id.row_container, nameView(context, "$glyph ${bulb.name}", if (bulb.lastOn) WHITE else OFF_GREY))
-                header.addView(R.id.row_container, stateButton(context, "On", bulb.address, "on", 0, bulb.lastOn, AMBER))
-                header.addView(R.id.row_container, stateButton(context, "Off", bulb.address, "off", 0, !bulb.lastOn, OFF_GREY))
+                header.addView(R.id.row_container, nameView(context, "$glyph ${group.name}", if (group.lastOn) WHITE else OFF_GREY))
+                header.addView(R.id.row_container, stateButton(context, "On", group.id, "on", 0, group.lastOn, AMBER))
+                header.addView(R.id.row_container, stateButton(context, "Off", group.id, "off", 0, !group.lastOn, OFF_GREY))
                 root.addView(R.id.widget_container, header)
 
-                if (bulb.brightnessPresets.isNotEmpty()) {
+                if (group.brightnessPresets.isNotEmpty()) {
                     val row = RemoteViews(context.packageName, R.layout.widget_row)
-                    for (p in bulb.brightnessPresets) {
-                        row.addView(R.id.row_container, button(context, "$p%", bulb.address, "brightness", p))
+                    for (p in group.brightnessPresets) {
+                        row.addView(R.id.row_container, button(context, "$p%", group.id, "brightness", p))
                     }
                     root.addView(R.id.widget_container, row)
                 }
 
-                if (bulb.cctPresets.isNotEmpty()) {
+                if (group.cctPresets.isNotEmpty()) {
                     val row = RemoteViews(context.packageName, R.layout.widget_row)
-                    for (k in bulb.cctPresets) {
-                        row.addView(R.id.row_container, button(context, "${k}K", bulb.address, "cct", k))
+                    for (k in group.cctPresets) {
+                        row.addView(R.id.row_container, button(context, "${k}K", group.id, "cct", k))
                     }
                     root.addView(R.id.widget_container, row)
                 }
 
-                if (bulb.rgbPresets.isNotEmpty()) {
+                if (group.rgbPresets.isNotEmpty()) {
                     val row = RemoteViews(context.packageName, R.layout.widget_row)
-                    for (c in bulb.rgbPresets) {
-                        row.addView(R.id.row_container, swatchButton(context, bulb.address, c and 0xFFFFFF))
+                    for (c in group.rgbPresets) {
+                        row.addView(R.id.row_container, swatchButton(context, group.id, c and 0xFFFFFF))
                     }
                     root.addView(R.id.widget_container, row)
                 }
@@ -114,10 +118,10 @@ class BulbWidgetProvider : AppWidgetProvider() {
                 setTextColor(R.id.name, color)
             }
 
-        private fun actionIntent(context: Context, address: String, kind: String, value: Int): PendingIntent {
+        private fun actionIntent(context: Context, groupId: String, kind: String, value: Int): PendingIntent {
             val intent = Intent(context, WidgetActionReceiver::class.java).apply {
                 action = ACTION_APPLY
-                putExtra(EXTRA_ADDRESS, address)
+                putExtra(EXTRA_GROUP, groupId)
                 putExtra(EXTRA_KIND, kind)
                 putExtra(EXTRA_VALUE, value)
             }
@@ -127,19 +131,19 @@ class BulbWidgetProvider : AppWidgetProvider() {
             )
         }
 
-        private fun button(context: Context, text: String, address: String, kind: String, value: Int): RemoteViews {
+        private fun button(context: Context, text: String, groupId: String, kind: String, value: Int): RemoteViews {
             val rv = RemoteViews(context.packageName, R.layout.widget_button)
             rv.setTextViewText(R.id.btn, text)
-            rv.setOnClickPendingIntent(R.id.btn, actionIntent(context, address, kind, value))
+            rv.setOnClickPendingIntent(R.id.btn, actionIntent(context, groupId, kind, value))
             return rv
         }
 
-        /** On/Off button that is highlighted when it represents the bulb's current state. */
+        /** On/Off button that is highlighted when it represents the group's current state. */
         private fun stateButton(
-            context: Context, text: String, address: String, kind: String, value: Int,
+            context: Context, text: String, groupId: String, kind: String, value: Int,
             active: Boolean, activeBg: Int,
         ): RemoteViews {
-            val rv = button(context, text, address, kind, value)
+            val rv = button(context, text, groupId, kind, value)
             if (active) {
                 rv.setInt(R.id.btn, "setBackgroundColor", activeBg)
                 rv.setTextColor(R.id.btn, DARK_TEXT)
@@ -148,11 +152,11 @@ class BulbWidgetProvider : AppWidgetProvider() {
         }
 
         /** A colour-swatch button whose background is the RGB preset itself. */
-        private fun swatchButton(context: Context, address: String, packed: Int): RemoteViews {
+        private fun swatchButton(context: Context, groupId: String, packed: Int): RemoteViews {
             val rv = RemoteViews(context.packageName, R.layout.widget_button)
             rv.setTextViewText(R.id.btn, "    ")
             rv.setInt(R.id.btn, "setBackgroundColor", 0xFF000000.toInt() or packed)
-            rv.setOnClickPendingIntent(R.id.btn, actionIntent(context, address, "color", packed))
+            rv.setOnClickPendingIntent(R.id.btn, actionIntent(context, groupId, "color", packed))
             return rv
         }
     }

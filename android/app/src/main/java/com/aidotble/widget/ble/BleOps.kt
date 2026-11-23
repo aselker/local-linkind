@@ -3,6 +3,7 @@ package com.aidotble.widget.ble
 import android.content.Context
 import android.util.Log
 import com.aidotble.widget.data.BulbStore
+import com.aidotble.widget.data.Group
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -23,6 +24,13 @@ object BleOps {
     sealed class ProvResult {
         data class Ok(val deviceId: String, val modelId: String) : ProvResult()
         data class Fail(val reason: String) : ProvResult()
+    }
+
+    /** Outcome of a group fan-out: which member addresses succeeded, and the tallies. */
+    class GroupOutcome(val results: List<Pair<String, Boolean>>) {
+        val ok: Int get() = results.count { it.second }
+        val total: Int get() = results.size
+        val succeeded: List<String> get() = results.filter { it.second }.map { it.first }
     }
 
     /** Build the ordered sign-in candidate list: seeded match first, then the bundled list. */
@@ -95,6 +103,28 @@ object BleOps {
         deviceId: String,
         vararg attrs: Protocol.Attr,
     ): Boolean = BleConductor.apply(context, address, modelId, deviceId, *attrs)
+
+    /**
+     * Apply the same attributes to every bulb in a group, in parallel (each member is
+     * independently serialized by [BleConductor], so one unreachable bulb doesn't hold up the
+     * others). Looks each member up in [BulbStore] for its modelId/deviceId; unknown members are
+     * skipped. Returns a [GroupOutcome] naming which members succeeded, so the caller can update
+     * only those bulbs' optimistic state (an off/unreachable bulb keeps its old state).
+     */
+    suspend fun applyToGroup(
+        context: Context,
+        group: Group,
+        vararg attrs: Protocol.Attr,
+    ): GroupOutcome {
+        val store = BulbStore.get(context)
+        val bulbs = group.members.mapNotNull { store.get(it) }
+        val results = coroutineScope {
+            bulbs.map { b ->
+                async { b.address to applyAttrs(context, b.address, b.modelId, b.deviceId, *attrs) }
+            }.awaitAll()
+        }
+        return GroupOutcome(results)
+    }
 
     /**
      * Turn every provisioned bulb on or off. Bulbs run in parallel (each is independently

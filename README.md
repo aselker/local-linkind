@@ -86,9 +86,10 @@ A different SKU just needs its own one-time `resolve`.
 
 [`android/`](android/) is a native Kotlin port of this protocol as an Android app: provision
 bulbs account-free over BLE and control them (on/off, brightness, colour-temperature) from a
-low-resource home-screen **widget** (no background work at idle; one short BLE op per tap). The
-brightness/CCT presets the widget shows are configured per-bulb in the app. See
-[`android/README.md`](android/README.md).
+low-resource home-screen **widget** (no background work at idle; one short BLE op per tap). Bulbs
+are organised into **groups** — the widget shows one control block per group and a tap fans out to
+every bulb in it; a group can hold a single bulb or several. The brightness/CCT presets are
+configured per group in the app. See [`android/README.md`](android/README.md).
 
 ## Files
 

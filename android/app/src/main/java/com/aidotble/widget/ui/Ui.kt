@@ -4,6 +4,7 @@ import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -41,6 +42,11 @@ fun Context.text(s: CharSequence, sizeSp: Float = 16f, bold: Boolean = false): T
 fun Context.button(label: CharSequence, onClick: () -> Unit): Button = Button(this).apply {
     text = label
     setOnClickListener { onClick() }
+}
+
+fun Context.checkbox(label: CharSequence, checked: Boolean): CheckBox = CheckBox(this).apply {
+    text = label
+    isChecked = checked
 }
 
 fun Context.input(initial: String, hint: String = ""): EditText = EditText(this).apply {
