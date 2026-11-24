@@ -28,6 +28,8 @@ class WidgetActionReceiver : BroadcastReceiver() {
         val value = intent.getIntExtra(BulbWidgetProvider.EXTRA_VALUE, 0)
 
         val appCtx = context.applicationContext
+        // Instant feedback: light up the tapped button now, before the (seconds-long) BLE op runs.
+        BulbWidgetProvider.showBusy(appCtx, groupId, kind, value)
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -68,9 +70,11 @@ class WidgetActionReceiver : BroadcastReceiver() {
                     // member keeps its previous state, so the widget doesn't claim it turned on.
                     val bulbs = BulbStore.get(appCtx)
                     outcome!!.succeeded.forEach { addr -> bulbs.update(addr) { it.lastOn = on } }
-                    withContext(Dispatchers.Main) { BulbWidgetProvider.refreshAll(appCtx) }
                 }
                 withContext(Dispatchers.Main) {
+                    // Always refresh — clears the "working…" highlight and shows the true state,
+                    // whether the op succeeded or (e.g. a switched-off bulb) failed.
+                    BulbWidgetProvider.refreshAll(appCtx)
                     Toast.makeText(appCtx, "${group.name}: $ok/$total", Toast.LENGTH_SHORT).show()
                 }
             } finally {

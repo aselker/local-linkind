@@ -39,6 +39,7 @@ class BulbWidgetProvider : AppWidgetProvider() {
         private val DARK_TEXT = 0xFF202124.toInt()
         private val OFF_GREY = 0xFF9AA0A6.toInt()
         private val WHITE = 0xFFFFFFFF.toInt()
+        private val PENDING = 0xFF4FC3F7.toInt()   // "working…" highlight shown the instant you tap
 
         /** Rebuild every placed widget instance (call after state/preset changes). */
         fun refreshAll(context: Context) {
@@ -49,7 +50,25 @@ class BulbWidgetProvider : AppWidgetProvider() {
             for (id in ids) manager.updateAppWidget(id, views)
         }
 
-        private fun build(context: Context): RemoteViews {
+        /**
+         * Instant tap feedback: re-render right now (before the BLE op) with the tapped button lit in
+         * [PENDING] and the group's glyph switched to a "working" mark, so a press registers visually
+         * immediately instead of seconds later when the op finishes. [refreshAll] clears it afterwards.
+         */
+        fun showBusy(context: Context, groupId: String, kind: String, value: Int) {
+            val manager = AppWidgetManager.getInstance(context)
+            val ids = manager.getAppWidgetIds(ComponentName(context, BulbWidgetProvider::class.java))
+            if (ids.isEmpty()) return
+            val views = build(context, groupId, kind, value)
+            for (id in ids) manager.updateAppWidget(id, views)
+        }
+
+        private fun build(
+            context: Context,
+            busyGroup: String? = null,
+            busyKind: String? = null,
+            busyValue: Int = 0,
+        ): RemoteViews {
             val root = RemoteViews(context.packageName, R.layout.widget_root)
             root.removeAllViews(R.id.widget_container)
 
@@ -65,24 +84,29 @@ class BulbWidgetProvider : AppWidgetProvider() {
             // "All on / All off" drives every group at once (only worth showing for 2+).
             if (groups.size > 1) {
                 val allRow = RemoteViews(context.packageName, R.layout.widget_row)
-                allRow.addView(R.id.row_container, button(context, "All on", "", "all_on", 0))
-                allRow.addView(R.id.row_container, button(context, "All off", "", "all_off", 0))
+                allRow.addView(R.id.row_container, button(context, "All on", "", "all_on", 0, pending = busyKind == "all_on"))
+                allRow.addView(R.id.row_container, button(context, "All off", "", "all_off", 0, pending = busyKind == "all_off"))
                 root.addView(R.id.widget_container, allRow)
             }
 
             for (group in groups) {
+                val busy = group.id == busyGroup
                 // compact header row: name (weighted) + live-state On / Off on one line
-                val glyph = if (group.lastOn) "●" else "○" // ● / ○
+                val glyph = when {
+                    busy -> "⟳"               // "working…" the instant you tap
+                    group.lastOn -> "●"
+                    else -> "○"
+                }
                 val header = RemoteViews(context.packageName, R.layout.widget_row)
-                header.addView(R.id.row_container, nameView(context, "$glyph ${group.name}", if (group.lastOn) WHITE else OFF_GREY))
-                header.addView(R.id.row_container, stateButton(context, "On", group.id, "on", 0, group.lastOn, AMBER))
-                header.addView(R.id.row_container, stateButton(context, "Off", group.id, "off", 0, !group.lastOn, OFF_GREY))
+                header.addView(R.id.row_container, nameView(context, "$glyph ${group.name}", if (busy || group.lastOn) WHITE else OFF_GREY))
+                header.addView(R.id.row_container, stateButton(context, "On", group.id, "on", 0, group.lastOn, AMBER, pending = busy && busyKind == "on"))
+                header.addView(R.id.row_container, stateButton(context, "Off", group.id, "off", 0, !group.lastOn, OFF_GREY, pending = busy && busyKind == "off"))
                 root.addView(R.id.widget_container, header)
 
                 if (group.brightnessPresets.isNotEmpty()) {
                     val row = RemoteViews(context.packageName, R.layout.widget_row)
                     for (p in group.brightnessPresets) {
-                        row.addView(R.id.row_container, button(context, "$p%", group.id, "brightness", p))
+                        row.addView(R.id.row_container, button(context, "$p%", group.id, "brightness", p, pending = busy && busyKind == "brightness" && busyValue == p))
                     }
                     root.addView(R.id.widget_container, row)
                 }
@@ -90,7 +114,7 @@ class BulbWidgetProvider : AppWidgetProvider() {
                 if (group.cctPresets.isNotEmpty()) {
                     val row = RemoteViews(context.packageName, R.layout.widget_row)
                     for (k in group.cctPresets) {
-                        row.addView(R.id.row_container, button(context, "${k}K", group.id, "cct", k))
+                        row.addView(R.id.row_container, button(context, "${k}K", group.id, "cct", k, pending = busy && busyKind == "cct" && busyValue == k))
                     }
                     root.addView(R.id.widget_container, row)
                 }
@@ -98,7 +122,8 @@ class BulbWidgetProvider : AppWidgetProvider() {
                 if (group.rgbPresets.isNotEmpty()) {
                     val row = RemoteViews(context.packageName, R.layout.widget_row)
                     for (c in group.rgbPresets) {
-                        row.addView(R.id.row_container, swatchButton(context, group.id, c and 0xFFFFFF))
+                        val packed = c and 0xFFFFFF
+                        row.addView(R.id.row_container, swatchButton(context, group.id, packed, pending = busy && busyKind == "color" && busyValue == packed))
                     }
                     root.addView(R.id.widget_container, row)
                 }
@@ -131,9 +156,13 @@ class BulbWidgetProvider : AppWidgetProvider() {
             )
         }
 
-        private fun button(context: Context, text: String, groupId: String, kind: String, value: Int): RemoteViews {
+        private fun button(context: Context, text: String, groupId: String, kind: String, value: Int, pending: Boolean = false): RemoteViews {
             val rv = RemoteViews(context.packageName, R.layout.widget_button)
             rv.setTextViewText(R.id.btn, text)
+            if (pending) {
+                rv.setInt(R.id.btn, "setBackgroundColor", PENDING)
+                rv.setTextColor(R.id.btn, DARK_TEXT)
+            }
             rv.setOnClickPendingIntent(R.id.btn, actionIntent(context, groupId, kind, value))
             return rv
         }
@@ -141,9 +170,10 @@ class BulbWidgetProvider : AppWidgetProvider() {
         /** On/Off button that is highlighted when it represents the group's current state. */
         private fun stateButton(
             context: Context, text: String, groupId: String, kind: String, value: Int,
-            active: Boolean, activeBg: Int,
+            active: Boolean, activeBg: Int, pending: Boolean = false,
         ): RemoteViews {
-            val rv = button(context, text, groupId, kind, value)
+            val rv = button(context, text, groupId, kind, value, pending)
+            if (pending) return rv  // "working…" highlight wins over the stored-state highlight
             if (active) {
                 rv.setInt(R.id.btn, "setBackgroundColor", activeBg)
                 rv.setTextColor(R.id.btn, DARK_TEXT)
@@ -152,10 +182,12 @@ class BulbWidgetProvider : AppWidgetProvider() {
         }
 
         /** A colour-swatch button whose background is the RGB preset itself. */
-        private fun swatchButton(context: Context, groupId: String, packed: Int): RemoteViews {
+        private fun swatchButton(context: Context, groupId: String, packed: Int, pending: Boolean = false): RemoteViews {
             val rv = RemoteViews(context.packageName, R.layout.widget_button)
-            rv.setTextViewText(R.id.btn, "    ")
-            rv.setInt(R.id.btn, "setBackgroundColor", 0xFF000000.toInt() or packed)
+            // when tapped, mark it "working" with a ⟳ glyph (the swatch keeps its own colour otherwise)
+            rv.setTextViewText(R.id.btn, if (pending) "⟳" else "    ")
+            rv.setInt(R.id.btn, "setBackgroundColor", if (pending) PENDING else (0xFF000000.toInt() or packed))
+            if (pending) rv.setTextColor(R.id.btn, DARK_TEXT)
             rv.setOnClickPendingIntent(R.id.btn, actionIntent(context, groupId, "color", packed))
             return rv
         }

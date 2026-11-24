@@ -20,6 +20,10 @@ Two things:
   own size-1 group (keeping its name and presets), and a freshly provisioned bulb also gets a
   size-1 group automatically — so a new bulb shows up on the widget right away. Merge bulbs into
   bigger groups, or split them out, from **Add group** / a group's **Edit** screen in the app.
+- **Instant tap feedback.** Talking to a bulb over BLE takes a second or two; so a press doesn't feel
+  like nothing happened, the tapped button lights up (in blue) and the group's dot turns to a ⟳
+  "working…" mark the moment you tap — *before* the radio op runs — then settles to the real on/off
+  state when it finishes (whether it succeeded or the bulb was unreachable).
 - Each group shows **live on/off state**: the On or Off button is highlighted to match the group's
   current state and a ● / ○ dot sits by the name. This is optimistic — it reflects the last state
   the widget/app set (updated on every tap and whenever you open the app), not a background poll, so
